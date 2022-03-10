@@ -1,10 +1,16 @@
-# luci-app-ssr-plus 改动版
-鉴于原始版本中只设计了主服务器和Netflix的分流功能，无法做到针对某个特定域名使用特别的服务器，因此预计增加以下功能。
+# luci-app-ssr-plus modify version
 
+The Original version only provide main server and netflix rule which can assign a node, it's not so convinent to add more route rules. 
 
-## 预计功能列表：
+To solve this problem, this project will focus on the following functions. 
 
-- 针对特定域名增加分流功能，用户可以自己添加域名以及指定相应服务器进行转发
-- 鉴于只是简单定制化，因此在不大动界面的前提下，增加2-3个域名转发界面，并设置后端转发
-- 后续功能待续
+## Functions:
 
+- Add specified route rules
+- Those rules can be assigned to special node.
+- only 3 rules will be added in the initial release.
+- more functions will be added if needed.
+
+## Thanks
+
+This project is based on lede's repo. [Link](https://github.com/coolsnowwolf/lede)
