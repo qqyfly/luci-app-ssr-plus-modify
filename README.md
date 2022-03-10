@@ -4,7 +4,7 @@ The Original version only provide main server and netflix rule which can assign 
 
 To solve this problem, this project will focus on the following functions. 
 
-## Functions:
+## Functions(Will have):
 
 - Add specified route rules
 - Those rules can be assigned to special node.
