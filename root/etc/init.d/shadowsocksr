@@ -18,6 +18,7 @@ CONFIG_FILE=/var/etc/${NAME}.json
 CONFIG_UDP_FILE=/var/etc/${NAME}_u.json
 CONFIG_SOCK5_FILE=/var/etc/${NAME}_s.json
 CONFIG_NETFLIX_FILE=/var/etc/${NAME}_n.json
+CONFIG_BBC_FILE=/var/etc/${NAME}_b.json
 server_count=0
 redir_tcp=0
 redir_udp=0
@@ -101,6 +102,8 @@ gen_config_file() {
 		config_file=$CONFIG_UDP_FILE
 	elif [ "$2" == "2" ]; then
 		config_file=$CONFIG_NETFLIX_FILE
+	elif [ "$2" == "3" ]; then
+		config_file=$CONFIG_BBC_FILE
 	else
 		config_file=$CONFIG_SOCK5_FILE
 	fi
@@ -250,6 +253,36 @@ start_rules() {
 	-N "$netflix_ip" \
 	-M "$(uci_get_by_type global netflix_proxy 0)" \
 	$(get_arg_out) $gfwmode $ARG_UDP
+
+
+	if [ "$BBC_SERVER" != "nil" ]; then
+		if [ "$BBC_SERVER" != "$GLOBAL_SERVER" ]; then
+			bbc="1"
+		else
+			bbc="2"
+		fi
+	else
+		bbc="0"
+	fi
+	bbc_ip=$(check_host $(uci_get_by_name $BBC_SERVER server 127.0.0.1))
+	/usr/bin/ssr-rules \
+	-s "$server" \
+	-l "$local_port" \
+	-S "$udp_server" \
+	-L "$udp_local_port" \
+	-a "$ac_ips" \
+	-i "$(uci_get_by_type access_control wan_bp_list)" \
+	-b "$(uci_get_by_type access_control wan_bp_ips)" \
+	-w "$(uci_get_by_type access_control wan_fw_ips)" \
+	-B "$(uci_get_by_type access_control lan_bp_ips)" \
+	-p "$(uci_get_by_type access_control lan_fp_ips)" \
+	-G "$(uci_get_by_type access_control lan_gm_ips)" \
+	-D "$proxyport" \
+	-F "$bbc" \
+	-N "$bbc_ip" \
+	-M "$(uci_get_by_type global bbc_proxy 0)" \
+	$(get_arg_out) $gfwmode $ARG_UDP
+
 	return $?
 }
 
@@ -336,6 +369,7 @@ start_redir() {
 	fi
 
 	local ntype=$(uci_get_by_name $NETFLIX_SERVER type)
+	local btype=$(uci_get_by_name $BBC_SERVER type)
 	if [ "$ntype" == "ss" ]; then
 		ncmd="/usr/bin/ss-redir"
 		sssock="/usr/bin/ss-local"
@@ -434,6 +468,40 @@ start_redir() {
 		elif [ "$ntype" == "tun" ]; then
 			/usr/share/shadowsocksr/genred2config.sh "/var/etc/redsocks-ssr-netflix.conf" vpn $(uci_get_by_name $NETFLIX_SERVER iface "br-lan") 4321
 			$ncmd -c /var/etc/redsocks-ssr-netflix.conf >/dev/null 2>&1
+			microsocks -i 127.0.0.1 -p 1088 ssr-socksdns >/dev/null 2>&1 &
+			dns2socks 127.0.0.1:1088 8.8.8.8:53 127.0.0.1:5555 -q >/dev/null 2>&1 &
+		fi
+	fi
+
+	if [ "$BBC_SERVER" != "nil" ] && [ "$BBC_SERVER" != "$GLOBAL_SERVER" ]; then
+		if [ "$ntype" == "ss" -o "$ntype" == "ssr" ]; then
+			gen_config_file $BBC_SERVER 2 4321
+			gen_config_file $BBC_SERVER 3 1088
+			$sssock -c /var/etc/shadowsocksr_s.json $ARG_OTA -f /var/run/ssr-socksdns.pid >/dev/null 2>&1
+			dns2socks 127.0.0.1:1088 8.8.8.8:53 127.0.0.1:5555 -q >/dev/null 2>&1 &
+			$ncmd -c /var/etc/shadowsocksr_n.json $ARG_OTA -f /var/run/ssr-bbc.pid >/dev/null 2>&1
+		elif [ "$ntype" == "v2ray" ]; then
+			lua /usr/share/shadowsocksr/genv2config.lua $BBC_SERVER tcp 4321 1088 >/var/etc/v2-ssr-bbc.json
+			$ncmd -config /var/etc/v2-ssr-bbc.json >/dev/null 2>&1 &
+			dns2socks 127.0.0.1:1088 8.8.8.8:53 127.0.0.1:5555 -q >/dev/null 2>&1 &
+		elif [ "$ntype" == "trojan" ]; then
+			lua /usr/share/shadowsocksr/gentrojanconfig.lua $BBC_SERVER nat 4321 >/var/etc/trojan-ssr-bbc.json
+			sed -i 's/\\//g' /var/etc/trojan-ssr-bbc.json
+			$ncmd --config /var/etc/trojan-ssr-bbc.json >/dev/null 2>&1 &
+			lua /usr/share/shadowsocksr/gentrojanconfig.lua $BBC_SERVER client 1088 >/var/etc/trojan-ssr-socksdns.json
+			sed -i 's/\\//g' /var/etc/trojan-ssr-socksdns.json
+			$ncmd --config /var/etc/trojan-ssr-socksdns.json >/dev/null 2>&1 &
+			dns2socks 127.0.0.1:1088 8.8.8.8:53 127.0.0.1:5555 -q >/dev/null 2>&1 &
+		elif [ "$ntype" == "socks5" ]; then
+			/usr/share/shadowsocksr/genred2config.sh "/var/etc/redsocks-ssr-bbc.conf" socks5 tcp 4321 \
+			$(check_host $(uci_get_by_name $BBC_SERVER server)) $(uci_get_by_name $BBC_SERVER server_port) \
+			$(uci_get_by_name $BBC_SERVER auth_enable 0) $(uci_get_by_name $BBC_SERVER username) $(uci_get_by_name $BBC_SERVER password)
+			$ncmd -c /var/etc/redsocks-ssr-bbc.conf >/dev/null 2>&1
+			microsocks -i 127.0.0.1 -p 1088 ssr-socksdns >/dev/null 2>&1 &
+			dns2socks 127.0.0.1:1088 8.8.8.8:53 127.0.0.1:5555 -q >/dev/null 2>&1 &
+		elif [ "$ntype" == "tun" ]; then
+			/usr/share/shadowsocksr/genred2config.sh "/var/etc/redsocks-ssr-bbc.conf" vpn $(uci_get_by_name $BBC_SERVER iface "br-lan") 4321
+			$ncmd -c /var/etc/redsocks-ssr-bbc.conf >/dev/null 2>&1
 			microsocks -i 127.0.0.1 -p 1088 ssr-socksdns >/dev/null 2>&1 &
 			dns2socks 127.0.0.1:1088 8.8.8.8:53 127.0.0.1:5555 -q >/dev/null 2>&1 &
 		fi
@@ -633,6 +701,11 @@ start() {
 		NETFLIX_SERVER=$GLOBAL_SERVER
 	fi
 
+	BBC_SERVER=$(uci_get_by_type global bbc_server nil)
+	if [ "$BBC_SERVER" == "same" ]; then
+		BBC_SERVER=$GLOBAL_SERVER
+	fi
+
 	if rules; then
 		start_redir
 		mkdir -p /tmp/dnsmasq.d && cp -a /etc/dnsmasq.ssr /tmp/ && cp -a /etc/dnsmasq.oversea /tmp/
@@ -675,6 +748,33 @@ start() {
 			fi
 		else
 			rm -f /tmp/dnsmasq.ssr/netflix_forward.conf
+		fi
+
+		if [ "$BBC_SERVER" != "nil" ]; then
+			if [ "$BBC_SERVER" != "$GLOBAL_SERVER" ]; then
+				cat /etc/config/bbc.list | while read line || [ -n "$line" ]; do
+					sed -i "/$line/d" /tmp/dnsmasq.ssr/gfw_list.conf
+				done
+				awk '!/^$/&&!/^#/{printf("ipset=/.%s/'"bbc"'\n",$0)}' /etc/config/bbc.list >/tmp/dnsmasq.ssr/bbc_forward.conf
+				awk '!/^$/&&!/^#/{printf("server=/.%s/'"127.0.0.1#5555"'\n",$0)}' /etc/config/bbc.list >>/tmp/dnsmasq.ssr/bbc_forward.conf
+
+				ipset -N bbc hash:net 2>/dev/null
+				cat /etc/config/bbcip.list | while read nip || [ -n "$nip" ]; do
+					ipset add bbc $nip 2>/dev/null
+				done
+			else
+				cat /etc/config/bbc.list | while read line || [ -n "$line" ]; do
+					sed -i "/$line/d" /tmp/dnsmasq.ssr/gfw_list.conf
+				done
+				awk '!/^$/&&!/^#/{printf("ipset=/.%s/'"bbc"'\n",$0)}' /etc/config/bbc.list >/tmp/dnsmasq.ssr/bbc_forward.conf
+				awk '!/^$/&&!/^#/{printf("server=/.%s/'"127.0.0.1#5335"'\n",$0)}' /etc/config/bbc.list >>/tmp/dnsmasq.ssr/bbc_forward.conf
+				ipset -N bbc hash:net 2>/dev/null
+				cat /etc/config/bbcip.list | while read nip || [ -n "$nip" ]; do
+					ipset add bbc $nip 2>/dev/null
+				done
+			fi
+		else
+			rm -f /tmp/dnsmasq.ssr/bbc_forward.conf
 		fi
 
 		/etc/init.d/dnsmasq restart >/dev/null 2>&1

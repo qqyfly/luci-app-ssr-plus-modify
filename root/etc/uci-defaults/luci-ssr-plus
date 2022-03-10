@@ -16,6 +16,8 @@ EOF
 touch /etc/china_ssr.txt
 touch /etc/config/white.list
 touch /etc/config/black.list
+touch /etc/config/bbc.list
+touch /etc/config/bbcip.list
 touch /etc/config/netflix.list
 touch /etc/config/netflixip.list
 touch /etc/dnsmasq.ssr/ad.conf

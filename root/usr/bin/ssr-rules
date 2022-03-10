@@ -33,6 +33,9 @@ Valid options are:
     -F                      netflix mode
     -N                      netflix server IP
     -M                      netflix proxy mode
+	-H                      bbc mode
+    -J                      bbc server IP
+    -K                      bbc proxy mode
     -e <extra_options>      extra options for iptables
     -o                      apply the rules to the OUTPUT chain
     -O                      apply the global rules to the OUTPUT chain
@@ -75,6 +78,7 @@ flush_r() {
 	ipset -X whitelist 2>/dev/null
 	ipset -X blacklist 2>/dev/null
 	ipset -X netflix 2>/dev/null
+	ipset -X bbc 2>/dev/null
 	[ -n "$FWI" ] && echo '#!/bin/sh' >$FWI
 	return 0
 }
@@ -135,11 +139,23 @@ ipset_r() {
 		$IPT -I SS_SPEC_WAN_AC -p tcp -m set --match-set netflix dst -j REDIRECT --to-ports $local_port
 	fi
 
+	if [ "$BBC" == "1" ]; then
+		$IPT -I SS_SPEC_WAN_AC -p tcp -m set --match-set bbc dst -j REDIRECT --to-ports 4321
+		if [ "$BBC_PROXY" == "1" ]; then
+			$IPT -I SS_SPEC_WAN_AC -p tcp -d $BBC_IP -j REDIRECT --to-ports $local_port
+		else
+			ipset -! add whitelist $BBC_IP
+		fi
+	elif [ "$BBC" == "2" ]; then
+		$IPT -I SS_SPEC_WAN_AC -p tcp -m set --match-set bbc dst -j REDIRECT --to-ports $local_port
+	fi
+
 	return $?
 }
 
 fw_rule() {
   ipset -N netflix hash:net 2>/dev/null
+  ipset -N bbc hash:net 2>/dev/null
 	$IPT -N SS_SPEC_WAN_FW
 	$IPT -A SS_SPEC_WAN_FW -d 0.0.0.0/8 -j RETURN
 	$IPT -A SS_SPEC_WAN_FW -d 10.0.0.0/8 -j RETURN
@@ -358,6 +374,15 @@ while getopts ":s:l:S:L:i:e:a:B:b:w:p:G:D:F:N:M:oOuUfgrczh" arg; do
 		;;
 	M)
 		NETFLIX_PROXY=$OPTARG
+		;;
+	H)
+		BBC=$OPTARG
+		;;
+	J)
+		BBC_IP=$OPTARG
+		;;
+	K)
+		BBC_PROXY=$OPTARG
 		;;
 	o)
 		OUTPUT=1
